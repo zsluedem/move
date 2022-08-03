@@ -9,7 +9,10 @@ use crate::{
     compiled_unit::AnnotatedCompiledUnit,
     diagnostics::{codes::Severity, *},
     expansion, hlir, interface_generator, naming, parser,
-    parser::{comments::*, *},
+    parser::{
+        comments::*,
+        parsed_tree::{parse_program, translate::translate_program},
+    },
     shared::{
         CompilationEnv, Flags, IndexedPackagePath, NamedAddressMap, NamedAddressMaps,
         NumericalAddress, PackagePaths,
@@ -215,12 +218,14 @@ impl<'a> Compiler<'a> {
         )?;
         let mut compilation_env = CompilationEnv::new(flags);
         let (source_text, pprog_and_comments_res) =
-            parse_program(&mut compilation_env, maps, targets, deps)?;
-        let res: Result<_, Diagnostics> = pprog_and_comments_res.and_then(|(pprog, comments)| {
-            SteppedCompiler::new_at_parser(compilation_env, pre_compiled_lib, pprog)
-                .run::<TARGET>()
-                .map(|compiler| (comments, compiler))
-        });
+            parse_program(&mut compilation_env, targets, deps)?;
+        let res: Result<_, Diagnostics> = pprog_and_comments_res
+            .and_then(|pprog| translate_program(&mut compilation_env, maps, pprog))
+            .and_then(|(pprog, comments)| {
+                SteppedCompiler::new_at_parser(compilation_env, pre_compiled_lib, pprog)
+                    .run::<TARGET>()
+                    .map(|compiler| (comments, compiler))
+            });
         Ok((source_text, res))
     }
 

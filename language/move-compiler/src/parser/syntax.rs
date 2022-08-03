@@ -10,13 +10,7 @@ use move_command_line_common::files::FileHash;
 use move_ir_types::location::*;
 use move_symbol_pool::Symbol;
 
-use crate::{
-    diag,
-    diagnostics::{Diagnostic, Diagnostics},
-    parser::{ast::*, lexer::*},
-    shared::*,
-    MatchedFileCommentMap,
-};
+use crate::parser::{ast::*, lexer::*};
 
 struct Context<'env, 'lexer, 'input> {
     env: &'env mut CompilationEnv,
@@ -422,14 +416,14 @@ fn parse_name_access_chain_<'a, F: FnOnce() -> &'a str>(
 // Modifiers
 //**************************************************************************************************
 
-struct Modifiers {
-    visibility: Option<Visibility>,
-    entry: Option<Loc>,
-    native: Option<Loc>,
+pub struct Modifiers {
+    pub visibility: Option<Visibility>,
+    pub entry: Option<Loc>,
+    pub native: Option<Loc>,
 }
 
 impl Modifiers {
-    fn empty() -> Self {
+    pub fn empty() -> Self {
         Self {
             visibility: None,
             entry: None,
@@ -1298,7 +1292,7 @@ fn parse_exp(context: &mut Context) -> Result<Exp, Diagnostic> {
 // binary operators, this returns a value of zero so that they will be
 // below the minimum value and will mark the end of the binary expression
 // for the code in parse_binop_exp.
-fn get_precedence(token: Tok) -> u32 {
+pub fn get_precedence(token: Tok) -> u32 {
     match token {
         // Reserved minimum precedence value is 1
         Tok::EqualEqualGreater => 2,
@@ -1655,7 +1649,12 @@ fn parse_quant_binding(context: &mut Context) -> Result<Spanned<(Bind, Exp)>, Di
     ))
 }
 
-fn make_builtin_call(loc: Loc, name: Symbol, type_args: Option<Vec<Type>>, args: Vec<Exp>) -> Exp {
+pub fn make_builtin_call(
+    loc: Loc,
+    name: Symbol,
+    type_args: Option<Vec<Type>>,
+    args: Vec<Exp>,
+) -> Exp {
     let maccess = sp(loc, NameAccessChain_::One(sp(loc, name)));
     sp(loc, Exp_::Call(maccess, false, type_args, sp(loc, args)))
 }

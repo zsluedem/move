@@ -5,6 +5,7 @@
 use crate::{diag, diagnostics::Diagnostics};
 use move_command_line_common::{character_sets::is_permitted_chars, files::FileHash};
 use move_ir_types::location::*;
+use move_symbol_pool::Symbol;
 use std::collections::BTreeMap;
 
 /// Types to represent comments.
@@ -47,11 +48,12 @@ pub enum CommentKind {
 #[derive(Debug, Clone, Copy)]
 pub struct Comment {
     pub kind: CommentKind,
-    pub range: Loc,
+    pub content: Symbol,
+    pub loc: Loc,
 }
 
 impl Comment {
-    pub fn new(kind: CommentKind, range: Loc) -> Self {
-        Comment { kind, range }
+    pub fn new(kind: CommentKind, content: Symbol, loc: Loc) -> Self {
+        Comment { kind, content, loc }
     }
 }

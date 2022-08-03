@@ -111,6 +111,7 @@ codes!(
         InvalidByteString: { msg: "invalid byte string", severity: NonblockingError },
         InvalidHexString: { msg: "invalid hex string", severity: NonblockingError },
         InvalidLValue: { msg: "invalid assignment", severity: NonblockingError },
+        InvalidLiteral: {msg: "invalid literal", severity: NonblockingError },
         SpecContextRestricted:
             { msg: "syntax item restricted to spec contexts", severity: BlockingError },
         InvalidSpecBlockMember: { msg: "invalid spec block member", severity: NonblockingError },
@@ -124,10 +125,12 @@ codes!(
         InvalidModule: { msg: "invalid 'module' declaration", severity: NonblockingError },
         InvalidScript: { msg: "invalid 'script' declaration", severity: NonblockingError },
         InvalidConstant: { msg: "invalid 'const' declaration", severity: NonblockingError },
+        InvalidExpression: {msg: "invalid expresstion declaration", severity: NonblockingError},
         InvalidFunction: { msg: "invalid 'fun' declaration", severity: NonblockingError },
         InvalidStruct: { msg: "invalid 'struct' declaration", severity: NonblockingError },
         InvalidSpec: { msg: "invalid 'spec' declaration", severity: NonblockingError },
         InvalidName: { msg: "invalid name", severity: BlockingError },
+        InvalidLet: {msg:"invalid let expresstion", severity: NonblockingError } ,
         InvalidFriendDeclaration:
             { msg: "invalid 'friend' declaration", severity: NonblockingError },
         InvalidAcquiresItem: { msg: "invalid 'acquires' item", severity: NonblockingError },
@@ -136,6 +139,8 @@ codes!(
         InvalidNonPhantomUse:
             { msg: "invalid non-phantom type parameter usage", severity: Warning },
         InvalidAttribute: { msg: "invalid attribute", severity: NonblockingError },
+        TopLevelNotAllow: {
+            msg: "only module, address and script is allowed in top level",  severity: NonblockingError }
     ],
     // errors name resolution, mostly expansion/translate and naming/translate
     NameResolution: [
@@ -233,6 +238,7 @@ codes!(
     Bug: [
         BytecodeGeneration: { msg: "BYTECODE GENERATION FAILED", severity: Bug },
         BytecodeVerification: { msg: "BYTECODE VERIFICATION FAILED", severity: Bug },
+        TokenizedFailure: { msg: "TOKENIZE CHARACTOR FAILED", severity: Bug },
     ],
     Derivation: [
         DeriveFailed: { msg: "attribute derivation failed", severity: BlockingError }
