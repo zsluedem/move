@@ -14,11 +14,10 @@ use self::cst::{PackageDefinition, Program};
 
 use super::find_move_filenames_with_address_mapping;
 
-pub mod cst;
 pub mod lexer;
 pub mod syntax;
 pub mod token_range;
-// pub mod translate;
+pub mod translate;
 
 pub fn parse_program(
     compilation_env: &mut CompilationEnv,
