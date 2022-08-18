@@ -10,7 +10,13 @@ use move_command_line_common::files::FileHash;
 use move_ir_types::location::*;
 use move_symbol_pool::Symbol;
 
-use crate::parser::{ast::*, lexer::*};
+use crate::{
+    diag,
+    diagnostics::{Diagnostic, Diagnostics},
+    parser::{ast::*, lexer::*},
+    shared::*,
+    MatchedFileCommentMap,
+};
 
 struct Context<'env, 'lexer, 'input> {
     env: &'env mut CompilationEnv,

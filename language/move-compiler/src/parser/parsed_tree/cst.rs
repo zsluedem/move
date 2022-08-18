@@ -13,7 +13,7 @@ use crate::{
         comments::Comment,
         lexer::Tok,
     },
-    shared::{NamedAddressMapIndex},
+    shared::NamedAddressMapIndex,
 };
 
 #[derive(Debug, Clone)]
@@ -22,17 +22,11 @@ pub struct Program {
     pub lib_definitions: Vec<PackageDefinition>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Definition {
-    Module(Module),
-    Address(Address),
-    Script(Script),
-}
 #[derive(Debug, Clone)]
 pub struct PackageDefinition {
     pub package: Option<Symbol>,
     pub named_address_map: NamedAddressMapIndex,
-    pub source_trees: Vec<Definition>,
+    pub source_trees: Vec<ParseTree>,
     pub source_tokens: Vec<Token>,
     pub file_hash: FileHash,
 }
@@ -124,26 +118,47 @@ pub type BinOp = SpannedWithComment<BinOp_>;
 pub type UnaryOp = SpannedWithComment<UnaryOp_>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ParsedTree {
+pub enum ParseTree {
+    Module(Module),
+    Script(Script),
+    Address(Address),
+
     Function(Function),
     Struct(Struct),
-    Sequence(SequenceItem),
+    Attribute(Attributes),
+    UseDecl(UseDecl),
+
+    FriendDecl(FriendDecl),
+    // let b;
+    Declare(LetDeclare),
+    // let b : t = e;
+    // let b = e;
+    Bind(LetAssign),
+    Constant(Constant),
+    // e
+    // e;
+    Exp(Exp, SemicolonEnd),
+
+    // spec {}
+    Spec(SpecBlock),
+    SpecMember(SpecMember),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Script_ {
-    pub attributes: Vec<Attributes>,
-    pub members: Vec<ParsedTree>,
+    pub members: BlockSequence,
 }
 
 pub type Script = SpannedWithComment<Script_>;
 
+// { ParsedTree , ..... }
+pub type BlockSequence = SpannedWithComment<Vec<ParseTree>>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module_ {
-    pub attributes: Vec<Attributes>,
     pub address: Option<Name>,
     pub name: Name,
-    pub body: Vec<ParsedTree>,
+    pub body: BlockSequence,
     pub is_spec_mod: bool,
 }
 
@@ -151,15 +166,13 @@ pub type Module = SpannedWithComment<Module_>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Address_ {
-    pub attributes: Vec<Attributes>,
     pub address: LeadingNameAccess,
-    pub modules: Vec<Module>,
+    pub modules: BlockSequence,
 }
 pub type Address = SpannedWithComment<Address_>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function_ {
-    pub attributes: Vec<Attributes>,
     pub modifiers: Modifiers,
     pub signatures: FunctionSignature,
     pub acquires: Vec<NameAccessChain>,
@@ -171,7 +184,6 @@ pub type Function = SpannedWithComment<Function_>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Struct_ {
-    pub attributes: Vec<Attributes>,
     pub modifiers: Modifiers,
     pub abilities: Vec<Ability>,
     pub name: Name,
@@ -183,10 +195,8 @@ pub type Struct = SpannedWithComment<Struct_>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpecBlock_ {
-    pub attributes: Vec<Attributes>,
     pub target: SpecBlockTarget,
-    pub uses: Vec<UseDecl>,
-    pub members: Vec<SpecBlockMember>,
+    pub members: BlockSequence,
 }
 
 pub type SpecBlock = SpannedWithComment<SpecBlock_>;
@@ -260,23 +270,6 @@ pub enum SpecConditionKind_ {
 pub type SpecConditionKind = SpannedWithComment<SpecConditionKind_>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum SequenceItem_ {
-    UseDecl(UseDecl),
-    FriendDecl(FriendDecl),
-    // let b;
-    Declare(LetDeclare),
-    // let b : t = e;
-    // let b = e;
-    Bind(LetAssign),
-    Constant(ConstantDecl),
-    // e
-    // e;
-    Exp(Exp, SemicolonEnd),
-    // spec {}
-    Spec(SpecBlock),
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct LetDeclare_ {
     pub var: BindList,
     pub type_: Option<Type>,
@@ -286,16 +279,13 @@ pub type LetDeclare = SpannedWithComment<LetDeclare_>;
 #[derive(Debug, Clone, PartialEq)]
 pub struct LetAssign_ {
     pub var: BindList,
+    pub is_post: bool,
     pub type_: Option<Type>,
     pub exp: Exp,
 }
 pub type LetAssign = SpannedWithComment<LetAssign_>;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct FriendDecl {
-    pub attributes: Vec<Attributes>,
-    pub friend: NameAccessChain,
-}
+pub type FriendDecl = SpannedWithComment<NameAccessChain>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SemicolonEnd {
@@ -312,25 +302,11 @@ pub struct Constant_ {
 
 pub type Constant = SpannedWithComment<Constant_>;
 
+pub type SpecMember = SpannedWithComment<SpecMember_>;
 #[derive(Debug, Clone, PartialEq)]
-pub struct ConstantDecl {
-    pub attributes: Vec<Attributes>,
-    pub constant: Constant,
-}
-
-pub type SequenceItem = SpannedWithComment<SequenceItem_>;
-
-pub type Block = Vec<SequenceItem>;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum SpecBlockMember_ {
+pub enum SpecMember_ {
     Condition(Box<SpecConditionKind>),
-    Function {
-        uninterpreted: bool,
-        name: Name,
-        signature: FunctionSignature,
-        body: FunctionBody,
-    },
+    // global expected_coin_sum: u64;
     Variable {
         is_global: bool,
         name: Name,
@@ -338,11 +314,7 @@ pub enum SpecBlockMember_ {
         type_: Type,
         init: Option<Exp>,
     },
-    Let {
-        name: Name,
-        post_state: bool,
-        def: Exp,
-    },
+    //let post post_now = spec_now_microseconds();
     Update {
         lhs: Exp,
         rhs: Exp,
@@ -374,8 +346,6 @@ pub enum PragmaValue {
 }
 pub type PragmaProperty = SpannedWithComment<PragmaProperty_>;
 
-pub type SpecBlockMember = SpannedWithComment<SpecBlockMember_>;
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpecApplyPattern_ {
     pub visibility: Option<Visibility>,
@@ -386,7 +356,7 @@ pub type SpecApplyPattern = SpannedWithComment<SpecApplyPattern_>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionBody_ {
-    pub body: Block,
+    pub body: BlockSequence,
     pub is_native: bool,
 }
 
@@ -441,7 +411,7 @@ pub enum Exp_ {
     Loop(Box<Exp>),
 
     // { seq }
-    Block(Block),
+    Block(BlockSequence),
     // fun (x1, ..., xn) e
     Lambda(BindList, Box<Exp>), // spec only
     // forall/exists x1 : e1, ..., xn [{ t1, .., tk } *] [where cond]: en.
@@ -484,6 +454,9 @@ pub enum Exp_ {
     // (e: t)
     Annotate(Box<Exp>, Type),
 
+    // Var<Type>: Type ;
+    Announce(NameAccessChain, Option<Vec<Type>>, Type), // spec only
+
     // Internal node marking an error was added to the error list
     // This is here so the pass can continue even when an error is hit
     UnresolvedError,
@@ -524,6 +497,7 @@ pub enum SpecBlockTarget_ {
     Module,
     Member(Name, Option<Box<FunctionSignature>>),
     Schema(Name, Vec<(Name, Vec<Ability>)>),
+    IdentModule(Name, Name),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -548,11 +522,7 @@ pub enum Use {
     Members(ModuleIdent, Vec<(Name, Option<Name>)>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct UseDecl {
-    pub attributes: Vec<Attributes>,
-    pub use_: Use,
-}
+pub type UseDecl = SpannedWithComment<Use>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructFields {

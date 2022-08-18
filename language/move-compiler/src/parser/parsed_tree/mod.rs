@@ -10,24 +10,21 @@ use crate::{
     shared::{CompilationEnv, IndexedPackagePath},
 };
 
-use self::{
-    ast::{PackageDefinition, Program},
-    parse::parse_file,
-};
+use self::cst::{PackageDefinition, Program};
 
 use super::find_move_filenames_with_address_mapping;
 
-pub mod ast;
+pub mod cst;
 pub mod lexer;
-pub mod parse;
+pub mod syntax;
 pub mod token_range;
-pub mod translate;
+// pub mod translate;
 
 pub fn parse_program(
     compilation_env: &mut CompilationEnv,
     targets: Vec<IndexedPackagePath>,
     deps: Vec<IndexedPackagePath>,
-) -> anyhow::Result<(FilesSourceText, Result<ast::Program, Diagnostics>)> {
+) -> anyhow::Result<(FilesSourceText, Result<cst::Program, Diagnostics>)> {
     let targets = find_move_filenames_with_address_mapping(targets)?;
     let mut deps = find_move_filenames_with_address_mapping(deps)?;
     ensure_targets_deps_dont_intersect(compilation_env, &targets, &mut deps)?;
@@ -42,8 +39,7 @@ pub fn parse_program(
         named_address_map,
     } in targets
     {
-        let (source_trees, ds, file_hash, source_tokens) =
-            parse_file(&mut files, path)?;
+        let (source_trees, ds, file_hash, source_tokens) = parse_file(&mut files, path)?;
         source_definitions.push(PackageDefinition {
             package,
             named_address_map,
@@ -60,8 +56,7 @@ pub fn parse_program(
         named_address_map,
     } in deps
     {
-        let (source_trees, ds, file_hash, source_tokens) =
-            parse_file(&mut files, path)?;
+        let (source_trees, ds, file_hash, source_tokens) = parse_file(&mut files, path)?;
         lib_definitions.push(PackageDefinition {
             package,
             named_address_map,
