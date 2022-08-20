@@ -9,10 +9,7 @@ use crate::{
     compiled_unit::AnnotatedCompiledUnit,
     diagnostics::{codes::Severity, *},
     expansion, hlir, interface_generator, naming, parser,
-    parser::{
-        comments::*,
-        parsed_tree::{parse_program, translate::translate_program},
-    },
+    parser::{comments::*, parsed_tree::parse_program, translate::translate_program},
     shared::{
         CompilationEnv, Flags, IndexedPackagePath, NamedAddressMap, NamedAddressMaps,
         NumericalAddress, PackagePaths,

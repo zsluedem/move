@@ -115,6 +115,8 @@ codes!(
         SpecContextRestricted:
             { msg: "syntax item restricted to spec contexts", severity: BlockingError },
         InvalidSpecBlockMember: { msg: "invalid spec block member", severity: NonblockingError },
+        InvalidNameAccessChain: {msg: "invalid name access chain", severity: NonblockingError},
+        InvalidType: {msg: "invalid type ", severity: NonblockingError}
     ],
     // errors for any rules around declaration items
     Declarations: [
@@ -129,11 +131,13 @@ codes!(
         InvalidFunction: { msg: "invalid 'fun' declaration", severity: NonblockingError },
         InvalidStruct: { msg: "invalid 'struct' declaration", severity: NonblockingError },
         InvalidSpec: { msg: "invalid 'spec' declaration", severity: NonblockingError },
+        InvalidSpecStatement: { msg: "invalid spec statement declaration", severity: NonblockingError },
         InvalidName: { msg: "invalid name", severity: BlockingError },
         InvalidLet: {msg:"invalid let expresstion", severity: NonblockingError } ,
         InvalidFriendDeclaration:
             { msg: "invalid 'friend' declaration", severity: NonblockingError },
         InvalidAcquiresItem: { msg: "invalid 'acquires' item", severity: NonblockingError },
+        InvalidUse:{ msg: "invalid 'use' declaration", severity: NonblockingError },
         InvalidPhantomUse:
             { msg: "invalid phantom type parameter usage", severity: NonblockingError },
         InvalidNonPhantomUse:

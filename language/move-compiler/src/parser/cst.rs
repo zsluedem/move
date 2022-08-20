@@ -6,7 +6,6 @@ use move_command_line_common::files::FileHash;
 use move_ir_types::location::Loc;
 use move_symbol_pool::Symbol;
 
-use super::{lexer::Token, token_range::TokenRange};
 use crate::{
     parser::{
         ast::{BinOp_, QuantKind_},
@@ -15,6 +14,8 @@ use crate::{
     },
     shared::NamedAddressMapIndex,
 };
+
+use super::parsed_tree::{lexer::Token, token_range::TokenRange};
 
 #[derive(Debug, Clone)]
 pub struct Program {
@@ -133,7 +134,7 @@ pub enum ParseTree {
     Declare(LetDeclare),
     // let b : t = e;
     // let b = e;
-    Bind(LetAssign),
+    LetAssign(LetAssign),
     Constant(Constant),
     // e
     // e;
@@ -142,6 +143,27 @@ pub enum ParseTree {
     // spec {}
     Spec(SpecBlock),
     SpecMember(SpecMember),
+}
+
+impl ParseTree {
+    pub fn loc(&self, tokens: &[Token]) -> Loc {
+        match self {
+            ParseTree::Module(i) => i.loc(tokens),
+            ParseTree::Script(i) => i.loc(tokens),
+            ParseTree::Address(i) => i.loc(tokens),
+            ParseTree::Function(i) => i.loc(tokens),
+            ParseTree::Struct(i) => i.loc(tokens),
+            ParseTree::Attribute(i) => i.loc(tokens),
+            ParseTree::UseDecl(i) => i.loc(tokens),
+            ParseTree::FriendDecl(i) => i.loc(tokens),
+            ParseTree::Declare(i) => i.loc(tokens),
+            ParseTree::LetAssign(i) => i.loc(tokens),
+            ParseTree::Constant(i) => i.loc(tokens),
+            ParseTree::Exp(i, _) => i.loc(tokens),
+            ParseTree::Spec(i) => i.loc(tokens),
+            ParseTree::SpecMember(i) => i.loc(tokens),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -159,7 +181,6 @@ pub struct Module_ {
     pub address: Option<Name>,
     pub name: Name,
     pub body: BlockSequence,
-    pub is_spec_mod: bool,
 }
 
 pub type Module = SpannedWithComment<Module_>;
@@ -217,7 +238,7 @@ pub enum CommaSpecCondition {
     Modifies,
 }
 
-pub type SpecTypeParameters = SpannedWithComment<Vec<(Name, Vec<Ability>)>>;
+pub type SpecTypeParameters = SpannedWithComment<Vec<Type>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SpecConditionKind_ {
@@ -310,7 +331,7 @@ pub enum SpecMember_ {
     Variable {
         is_global: bool,
         name: Name,
-        type_parameters: Vec<(Name, Vec<Ability>)>,
+        type_parameters: Vec<Type>,
         type_: Type,
         init: Option<Exp>,
     },
@@ -350,7 +371,7 @@ pub type PragmaProperty = SpannedWithComment<PragmaProperty_>;
 pub struct SpecApplyPattern_ {
     pub visibility: Option<Visibility>,
     pub name_pattern: Vec<Name>,
-    pub type_parameters: Vec<(Name, Vec<Ability>)>,
+    pub type_parameters: Vec<Type>,
 }
 pub type SpecApplyPattern = SpannedWithComment<SpecApplyPattern_>;
 
@@ -378,7 +399,7 @@ pub enum UnaryOp_ {
 pub enum Exp_ {
     Value(Value),
     // [m::]n[<t1, .., tn>]
-    Name(NameAccessChain, Option<Vec<Type>>),
+    Name(NameAccessChain, Vec<Type>),
     // move(x)
     Move(Var),
     // copy(x)
@@ -388,20 +409,16 @@ pub enum Exp_ {
     Call(
         NameAccessChain,
         bool,
-        Option<Vec<Type>>,
+        Vec<Type>,
         SpannedWithComment<Vec<Exp>>,
     ),
 
     // tn {f1: e1, ... , f_n: e_n }
-    Pack(
-        NameAccessChain,
-        Option<Vec<Type>>,
-        Vec<(Field, Option<Exp>)>,
-    ),
+    Pack(NameAccessChain, Vec<Type>, Vec<(Field, Option<Exp>)>),
 
     // vector [ e1, ..., e_n ]
     // vector<t> [e1, ..., en ]
-    Vector(Name, Option<Vec<Type>>, SpannedWithComment<Vec<Exp>>),
+    Vector(Name, Vec<Type>, SpannedWithComment<Vec<Exp>>),
 
     // if (eb) et else ef
     IfElse(Box<Exp>, Box<Exp>, Option<Box<Exp>>),
@@ -455,7 +472,7 @@ pub enum Exp_ {
     Annotate(Box<Exp>, Type),
 
     // Var<Type>: Type ;
-    Announce(NameAccessChain, Option<Vec<Type>>, Type), // spec only
+    Announce(NameAccessChain, Vec<Type>, Type), // spec only
 
     // Internal node marking an error was added to the error list
     // This is here so the pass can continue even when an error is hit
@@ -478,11 +495,8 @@ pub type Value = SpannedWithComment<Value_>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Bind_ {
     Var(Var),
-    Unpack(
-        Box<NameAccessChain>,
-        Option<Vec<Type>>,
-        Vec<(Field, Option<Bind>)>,
-    ),
+    // <NameAccessChain> <OptionalTypeArgs> "{" Comma<BindField> "}"
+    Unpack(Box<NameAccessChain>, Vec<Type>, Vec<(Field, Option<Bind>)>),
 }
 
 pub type Bind = SpannedWithComment<Bind_>;
@@ -496,7 +510,7 @@ pub enum SpecBlockTarget_ {
     Code,
     Module,
     Member(Name, Option<Box<FunctionSignature>>),
-    Schema(Name, Vec<(Name, Vec<Ability>)>),
+    Schema(Name, Vec<Type>),
     IdentModule(Name, Name),
 }
 
@@ -531,7 +545,7 @@ pub struct StructFields {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FunctionSignature {
-    pub type_parameters: Vec<(Name, Vec<Ability>)>,
+    pub type_parameters: Vec<Type>,
     pub parameters: Vec<(Var, Type)>,
     pub return_type: Option<Type>,
 }
@@ -557,6 +571,8 @@ pub enum Type_ {
     // (t1, t2, ... , tn)
     // Used for return values and expression blocks
     Sequance(Vec<Type>),
+    // name: ability (+ ability)*
+    Ability(NameAccessChain, Vec<Ability>),
 }
 
 pub type Type = SpannedWithComment<Type_>;

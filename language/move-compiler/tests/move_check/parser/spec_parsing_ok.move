@@ -106,7 +106,7 @@ module 0x8675309::M {
 
     spec module {
         global x: u64;
-        local y: u64;
+        local y: u64 ;
         z: u64;
         global generic<T>: u64;
         invariant update generic<u64> = 23;

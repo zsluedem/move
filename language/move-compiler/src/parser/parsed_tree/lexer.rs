@@ -8,6 +8,7 @@ use crate::{
     diag,
     diagnostics::Diagnostic,
     parser::{
+        cst::ParsedToken,
         lexer::{find_token, Tok},
         syntax::make_loc,
     },
@@ -16,7 +17,7 @@ use move_command_line_common::files::FileHash;
 use move_ir_types::location::Loc;
 use move_symbol_pool::Symbol;
 
-use super::{cst::ParsedToken, token_range::TokenRange};
+use super::token_range::TokenRange;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Token {
@@ -163,7 +164,6 @@ impl<'input> FidelityLexer<'input> {
             Ok(false)
         }
     }
-
 
     pub fn consume_token(&mut self, tok: Tok) -> Result<ParsedToken, Diagnostic> {
         self.consume_token_(tok, self.start_loc(), "")

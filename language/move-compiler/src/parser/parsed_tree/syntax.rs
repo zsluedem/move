@@ -1,12 +1,19 @@
+use std::fs::File;
+use std::io::Read;
+
+use move_command_line_common::files::FileHash;
 use move_ir_types::location::Loc;
 use move_symbol_pool::Symbol;
 
-use super::cst::*;
+use super::super::cst::*;
+use super::lexer::Token;
+use crate::diagnostics::{Diagnostics, FilesSourceText};
 use crate::parser::ast::{BinOp_, QuantKind_, Visibility as V, ENTRY_MODIFIER};
+use crate::parser::comments::verify_string;
 use crate::parser::syntax::get_precedence;
 use crate::{
     diag,
-    diagnostics::{Diagnostic, FilesSourceText},
+    diagnostics::Diagnostic,
     parser::{lexer::Tok, parsed_tree::lexer::FidelityLexer, syntax::make_loc},
 };
 
@@ -137,17 +144,17 @@ fn parse_bind_field(context: &mut Context) -> Result<(Field, Option<Bind>), Diag
 }
 // Parse an optional list of type arguments.
 //    OptionalTypeArgs = "<" Comma<Type> ">" | <empty>
-fn parse_optional_type_args(context: &mut Context) -> Result<Option<Vec<Type>>, Diagnostic> {
+fn parse_optional_type_args(context: &mut Context) -> Result<Vec<Type>, Diagnostic> {
     if context.tokens.peek() == Tok::Less {
-        Ok(Some(parse_comma_list(
+        Ok(parse_comma_list(
             context,
             Tok::Less,
             Tok::Greater,
             parse_type,
             "a type",
-        )?))
+        )?)
     } else {
-        Ok(None)
+        Ok(vec![])
     }
 }
 
@@ -785,7 +792,7 @@ fn parse_name_exp(context: &mut Context) -> Result<Exp_, Diagnostic> {
     // There's an ambiguity if the name is followed by a "<". If there is no whitespace
     // after the name, treat it as the start of a list of type arguments. Otherwise
     // assume that the "<" is a boolean operator.
-    let mut tys = None;
+    let mut tys = vec![];
     let start_loc = context.tokens.start_loc();
     if context.tokens.peek() == Tok::Exclaim {
         context.tokens.advance()?;
@@ -900,7 +907,7 @@ fn parse_let(context: &mut Context) -> Result<ParseTree, Diagnostic> {
             type_: ty_opt,
             exp: e,
         };
-        Ok(ParseTree::Bind(LetAssign::new(
+        Ok(ParseTree::LetAssign(LetAssign::new(
             res,
             context.tokens.token_range(start_loc, end_loc),
         )))
@@ -1002,7 +1009,7 @@ pub fn parse_spec_block(context: &mut Context) -> Result<SpecBlock, Diagnostic> 
         Tok::Identifier if context.tokens.content() == "schema" => {
             context.tokens.advance()?;
             let name = parse_identifier(context)?;
-            let type_parameters = parse_optional_type_parameters(context)?;
+            let type_parameters = parse_optional_type_args(context)?;
             SpecBlockTarget_::Schema(name, type_parameters)
         }
         Tok::Identifier => {
@@ -1057,7 +1064,7 @@ fn parse_spec(context: &mut Context) -> Result<ParseTree, Diagnostic> {
 fn parse_invariant(context: &mut Context) -> Result<ParseTree, Diagnostic> {
     let start_loc = context.tokens.tokens_loc();
     context.tokens.consume_token(Tok::Invariant)?;
-    let types = parse_optional_type_parameters(context)?;
+    let types = parse_optional_type_args(context)?;
     let type_end_loc = context.tokens.tokens_loc();
     let is_update = match context.tokens.peek() {
         Tok::Identifier if context.tokens.content() == "update" => {
@@ -1243,7 +1250,7 @@ fn parse_emits(context: &mut Context) -> Result<ParseTree, Diagnostic> {
 fn parse_axiom(context: &mut Context) -> Result<ParseTree, Diagnostic> {
     let start_loc = context.tokens.tokens_loc();
     consume_identifier(context, "axiom")?;
-    let types = parse_optional_type_parameters(context)?;
+    let types = parse_optional_type_args(context)?;
     let type_end_loc = context.tokens.tokens_loc();
 
     let properties = parse_condition_properties(context)?;
@@ -1368,7 +1375,7 @@ fn parse_spec_variable(context: &mut Context) -> Result<ParseTree, Diagnostic> {
         _ => false,
     };
     let name = parse_identifier(context)?;
-    let type_parameters = parse_optional_type_parameters(context)?;
+    let type_parameters = parse_optional_type_args(context)?;
     context.tokens.consume_token(Tok::Colon)?;
     let type_ = parse_type(context)?;
     let init = if is_global && context.tokens.peek() == Tok::Equal {
@@ -1414,7 +1421,7 @@ fn parse_spec_target_signature_opt(
 ) -> Result<Option<Box<FunctionSignature>>, Diagnostic> {
     match context.tokens.peek() {
         Tok::Less | Tok::LParen => {
-            let type_parameters = parse_optional_type_parameters(context)?;
+            let type_parameters = parse_optional_type_args(context)?;
             // "(" Comma<Parameter> ")"
             let parameters = parse_comma_list(
                 context,
@@ -1547,7 +1554,7 @@ fn parse_spec_apply_pattern(context: &mut Context) -> Result<SpecApplyPattern, D
         },
         parse_spec_apply_fragment,
     )?;
-    let type_parameters = parse_optional_type_parameters(context)?;
+    let type_parameters = parse_optional_type_args(context)?;
     let end_loc = context.tokens.tokens_loc();
     Ok(SpecApplyPattern::new(
         SpecApplyPattern_ {
@@ -1624,7 +1631,7 @@ fn parse_function_decl(
     // "fun" <FunctionDefName>
     context.tokens.consume_token(Tok::Fun)?;
     let name = parse_identifier(context)?;
-    let type_parameters = parse_optional_type_parameters(context)?;
+    let type_parameters = parse_optional_type_args(context)?;
 
     // "(" Comma<Parameter> ")"
     let parameters = parse_comma_list(
@@ -1722,7 +1729,7 @@ pub fn parse_script(context: &mut Context) -> Result<ParseTree, Diagnostic> {
     let start_loc = context.tokens.tokens_loc();
     context.tokens.consume_token(Tok::Script)?;
 
-    let mut body = parse_block_trees(context)?;
+    let body = parse_block_trees(context)?;
     let end_loc = context.tokens.tokens_loc();
     let token_range = context.tokens.token_range(start_loc, end_loc);
     let tree = Script::new(Script_ { members: body }, token_range);
@@ -1999,33 +2006,11 @@ fn parse_attributes(context: &mut Context) -> Result<ParseTree, Diagnostic> {
     )))
 }
 
-// Parse optional type parameter list.
-//    OptionalTypeParameters = "<" Comma<TypeParameter> ">" | <empty>
-fn parse_optional_type_parameters(
-    context: &mut Context,
-) -> Result<Vec<(Name, Vec<Ability>)>, Diagnostic> {
-    if context.tokens.peek() == Tok::Less {
-        parse_comma_list(
-            context,
-            Tok::Less,
-            Tok::Greater,
-            parse_type_parameter,
-            "a type parameter",
-        )
-    } else {
-        Ok(vec![])
-    }
-}
-
-// Parse a type parameter:
-//      TypeParameter =
-//          <Identifier> <Constraint>?
-//      Constraint =
+// Parse abilities
+//      Abilites =
 //          ":" <Ability> (+ <Ability>)*
-fn parse_type_parameter(context: &mut Context) -> Result<(Name, Vec<Ability>), Diagnostic> {
-    let n = parse_identifier(context)?;
-
-    let ability_constraints = if context.tokens.match_token(Tok::Colon)? {
+fn parse_abilities(context: &mut Context) -> Result<Vec<Ability>, Diagnostic> {
+    if context.tokens.match_token(Tok::Colon)? {
         parse_list(
             context,
             |context| match context.tokens.peek() {
@@ -2042,10 +2027,21 @@ fn parse_type_parameter(context: &mut Context) -> Result<(Name, Vec<Ability>), D
                 ))),
             },
             parse_ability,
-        )?
+        )
     } else {
-        vec![]
-    };
+        Ok(vec![])
+    }
+}
+
+// Parse a type parameter:
+//      TypeParameter =
+//          <Identifier> <Constraint>?
+//      Constraint =
+//          ":" <Ability> (+ <Ability>)*
+fn parse_type_parameter(context: &mut Context) -> Result<(Name, Vec<Ability>), Diagnostic> {
+    let n = parse_identifier(context)?;
+
+    let ability_constraints = parse_abilities(context)?;
     Ok((n, ability_constraints))
 }
 
@@ -2062,6 +2058,7 @@ fn parse_ability(context: &mut Context) -> Result<Ability, Diagnostic> {
 // Parse a Type:
 //      Type =
 //          <NameAccessChain> ("<" Comma<Type> ">")?
+//          | <NameAccessChain> : <Ability>*?
 //          | "&" <Type>
 //          | "&mut" <Type>
 //          | "|" Comma<Type> "|" Type   (spec only)
@@ -2090,12 +2087,18 @@ fn parse_type(context: &mut Context) -> Result<Type, Diagnostic> {
         }
         _ => {
             let tn = parse_name_access_chain(context, || "a type name")?;
-            let tys = if context.tokens.peek() == Tok::Less {
-                parse_comma_list(context, Tok::Less, Tok::Greater, parse_type, "a type")?
-            } else {
-                vec![]
-            };
-            Type_::Apply(tn, tys)
+            match context.tokens.peek() {
+                Tok::Less => {
+                    let tys =
+                        parse_comma_list(context, Tok::Less, Tok::Greater, parse_type, "a type")?;
+                    Type_::Apply(tn, tys)
+                }
+                Tok::Colon => {
+                    let abilities = parse_abilities(context)?;
+                    Type_::Ability(tn, abilities)
+                }
+                _ => Type_::Apply(tn, vec![]),
+            }
         }
     };
     let end_loc = context.tokens.tokens_loc();
@@ -2216,13 +2219,7 @@ fn parse_module_name(context: &mut Context) -> Result<ParsedToken, Diagnostic> {
 //          "}"
 fn parse_module(context: &mut Context) -> Result<ParseTree, Diagnostic> {
     let start_loc = context.tokens.tokens_loc();
-    let is_spec_mod = if context.tokens.peek() == Tok::Spec {
-        context.tokens.advance()?;
-        true
-    } else {
-        context.tokens.consume_token(Tok::Module)?;
-        false
-    };
+    context.tokens.consume_token(Tok::Module)?;
     let leading = parse_leading_name_access(context)?;
     let (name, address) = if context.tokens.match_token(Tok::ColonColon)? {
         (parse_module_name(context)?, Some(leading))
@@ -2238,83 +2235,11 @@ fn parse_module(context: &mut Context) -> Result<ParseTree, Diagnostic> {
             address,
             name,
             body,
-            is_spec_mod,
         },
         token_range,
     );
 
     Ok(ParseTree::Module(tree))
-}
-
-// Parse a file:
-//      File =
-//          (<Attributes> (<AddressBlock> | <Module> | <Script>))*
-fn parse(context: &mut Context) -> Result<Vec<ParseTree>, Diagnostic> {
-    let mut trees = vec![];
-    // Advance begin of file
-    context.tokens.advance()?;
-    while context.tokens.peek() != Tok::EOF {
-        trees.push(parse_tree(context)?)
-    }
-    // Advance end of file
-    context.tokens.advance()?;
-    Ok(trees)
-}
-// parse a parse tree
-// ParseTree = (
-//
-// )
-//
-//
-fn parse_tree(context: &mut Context) -> Result<ParseTree, Diagnostic> {
-    let tok = context.tokens.peek();
-    match tok {
-        Tok::Module => parse_module(context),
-        Tok::Script => parse_script(context),
-
-        Tok::Fun => parse_function(vec![], context),
-        Tok::Struct => parse_struct(vec![], context),
-        Tok::NumSign => parse_attributes(context),
-        Tok::Use => parse_use(context),
-        Tok::Public | Tok::Native => parse_modifier_follow(context),
-
-        Tok::Friend => parse_friend(context),
-        Tok::Let => parse_let(context),
-        Tok::Const => parse_constant(context),
-
-        Tok::Spec => parse_spec(context),
-
-        Tok::Invariant => parse_invariant(context),
-
-        Tok::Identifier => match context.tokens.content() {
-            //   Spec Member
-            "assert" => parse_single_condition(context, SingleSpecCondition::Assert),
-            "assume" => parse_single_condition(context, SingleSpecCondition::Assume),
-            "ensures" => parse_single_condition(context, SingleSpecCondition::Ensures),
-            "requires" => parse_single_condition(context, SingleSpecCondition::Requires),
-            "decreases" => parse_single_condition(context, SingleSpecCondition::Decreases),
-            "succeeds_if" => parse_single_condition(context, SingleSpecCondition::SucceedsIf),
-
-            "aborts_with" => parse_comma_spec_condition(context, CommaSpecCondition::AbortsWith),
-            "modifies" => parse_comma_spec_condition(context, CommaSpecCondition::Modifies),
-
-            "aborts_if" => parse_abort_if(context),
-            "emits" => parse_emits(context),
-
-            "axiom" => parse_axiom(context),
-            "include" => parse_spec_include(context),
-            "apply" => parse_spec_apply(context),
-            "pragma" => parse_spec_pragma(context),
-            "global" | "local" => parse_spec_variable(context),
-            "update" => parse_spec_update(context),
-            //   Spec Member
-            ENTRY_MODIFIER => parse_modifier_follow(context),
-
-            "address" => parse_address_block(context),
-        },
-
-        _ => parse_exp_semicolon(context),
-    }
 }
 
 fn parse_block_trees(context: &mut Context) -> Result<BlockSequence, Diagnostic> {
@@ -2530,45 +2455,112 @@ fn parse_var(context: &mut Context) -> Result<Var, Diagnostic> {
     parse_identifier(context)
 }
 
-// pub fn parse_file(
-//     files: &mut FilesSourceText,
-//     fname: Symbol,
-// ) -> anyhow::Result<(Vec<Definition>, Diagnostics, FileHash, Vec<Token>)> {
-//     let mut diags = Diagnostics::new();
-//     let mut f = File::open(fname.as_str())
-//         .map_err(|err| std::io::Error::new(err.kind(), format!("{}: {}", err, fname)))?;
-//     let mut source_buffer = String::new();
-//     f.read_to_string(&mut source_buffer)?;
-//     let file_hash = FileHash::new(&source_buffer);
-//     let buffer = match verify_string(file_hash, &source_buffer) {
-//         Err(ds) => {
-//             diags.extend(ds);
-//             files.insert(file_hash, (fname, source_buffer));
-//             return Ok((vec![], diags, file_hash, vec![]));
-//         }
-//         Ok(()) => &source_buffer,
-//     };
-//     let (defs, tokens) = match parse_file_string(file_hash, buffer) {
-//         Ok((defs, tokens)) => (defs, tokens),
-//         Err(ds) => {
-//             diags.extend(ds);
-//             (vec![], vec![])
-//         }
-//     };
-//     files.insert(file_hash, (fname, source_buffer));
-//     Ok((defs, diags, file_hash, tokens))
-// }
+// Parse a file:
+//      File =
+//          (<Attributes> (<AddressBlock> | <Module> | <Script>))*
+fn parse(context: &mut Context) -> Result<Vec<ParseTree>, Diagnostic> {
+    let mut trees = vec![];
+    // Advance begin of file
+    context.tokens.advance()?;
+    while context.tokens.peek() != Tok::EOF {
+        trees.push(parse_tree(context)?)
+    }
+    // Advance end of file
+    context.tokens.advance()?;
+    Ok(trees)
+}
 
-// /// Parse the `input` string as a file of Move source code and return the
-// /// result as either a pair of FileDefinition and doc comments or some Diagnostics. The `file` name
-// /// is used to identify source locations in error messages.
-// pub fn parse_file_string(
-//     file_hash: FileHash,
-//     input: &str,
-// ) -> Result<(Vec<Definition>, Vec<Token>), Diagnostics> {
-//     let mut tokens = FidelityLexer::new(input, file_hash);
-//     let mut context = Context::new(&mut tokens);
-//     parse_definition(&mut context)
-//         .map_err(|e| Diagnostics::from(vec![e]))
-//         .map(|defs| (defs, context.tokens.get_tokens()))
-// }
+fn parse_tree(context: &mut Context) -> Result<ParseTree, Diagnostic> {
+    let tok = context.tokens.peek();
+    match tok {
+        Tok::Module => parse_module(context),
+        Tok::Script => parse_script(context),
+
+        Tok::Fun => parse_function(vec![], context),
+        Tok::Struct => parse_struct(vec![], context),
+        Tok::NumSign => parse_attributes(context),
+        Tok::Use => parse_use(context),
+        Tok::Public | Tok::Native => parse_modifier_follow(context),
+
+        Tok::Friend => parse_friend(context),
+        Tok::Let => parse_let(context),
+        Tok::Const => parse_constant(context),
+
+        Tok::Spec => parse_spec(context),
+
+        Tok::Invariant => parse_invariant(context),
+
+        Tok::Identifier => match context.tokens.content() {
+            //   Spec Member
+            "assert" => parse_single_condition(context, SingleSpecCondition::Assert),
+            "assume" => parse_single_condition(context, SingleSpecCondition::Assume),
+            "ensures" => parse_single_condition(context, SingleSpecCondition::Ensures),
+            "requires" => parse_single_condition(context, SingleSpecCondition::Requires),
+            "decreases" => parse_single_condition(context, SingleSpecCondition::Decreases),
+            "succeeds_if" => parse_single_condition(context, SingleSpecCondition::SucceedsIf),
+
+            "aborts_with" => parse_comma_spec_condition(context, CommaSpecCondition::AbortsWith),
+            "modifies" => parse_comma_spec_condition(context, CommaSpecCondition::Modifies),
+
+            "aborts_if" => parse_abort_if(context),
+            "emits" => parse_emits(context),
+
+            "axiom" => parse_axiom(context),
+            "include" => parse_spec_include(context),
+            "apply" => parse_spec_apply(context),
+            "pragma" => parse_spec_pragma(context),
+            "global" | "local" => parse_spec_variable(context),
+            "update" => parse_spec_update(context),
+            //   Spec Member
+            ENTRY_MODIFIER => parse_modifier_follow(context),
+
+            "address" => parse_address_block(context),
+            _ => todo!(),
+        },
+
+        _ => parse_exp_semicolon(context),
+    }
+}
+
+pub fn parse_file(
+    files: &mut FilesSourceText,
+    fname: Symbol,
+) -> anyhow::Result<(Vec<ParseTree>, Diagnostics, FileHash, Vec<Token>)> {
+    let mut diags = Diagnostics::new();
+    let mut f = File::open(fname.as_str())
+        .map_err(|err| std::io::Error::new(err.kind(), format!("{}: {}", err, fname)))?;
+    let mut source_buffer = String::new();
+    f.read_to_string(&mut source_buffer)?;
+    let file_hash = FileHash::new(&source_buffer);
+    let buffer = match verify_string(file_hash, &source_buffer) {
+        Err(ds) => {
+            diags.extend(ds);
+            files.insert(file_hash, (fname, source_buffer));
+            return Ok((vec![], diags, file_hash, vec![]));
+        }
+        Ok(()) => &source_buffer,
+    };
+    let (defs, tokens) = match parse_file_string(file_hash, buffer) {
+        Ok((defs, tokens)) => (defs, tokens),
+        Err(ds) => {
+            diags.extend(ds);
+            (vec![], vec![])
+        }
+    };
+    files.insert(file_hash, (fname, source_buffer));
+    Ok((defs, diags, file_hash, tokens))
+}
+
+/// Parse the `input` string as a file of Move source code and return the
+/// result as either a pair of FileDefinition and doc comments or some Diagnostics. The `file` name
+/// is used to identify source locations in error messages.
+pub fn parse_file_string(
+    file_hash: FileHash,
+    input: &str,
+) -> Result<(Vec<ParseTree>, Vec<Token>), Diagnostics> {
+    let mut tokens = FidelityLexer::new(input, file_hash);
+    let mut context = Context::new(&mut tokens);
+    parse(&mut context)
+        .map_err(|e| Diagnostics::from(vec![e]))
+        .map(|defs| (defs, context.tokens.get_tokens()))
+}

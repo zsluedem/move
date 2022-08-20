@@ -106,6 +106,10 @@ impl<T> Spanned<T> {
             loc: Loc::new(FileHash::empty(), 0, 0),
         }
     }
+
+    pub fn loc(&self) -> Loc {
+        self.loc
+    }
 }
 
 impl<T: PartialEq> PartialEq for Spanned<T> {

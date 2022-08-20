@@ -7,9 +7,11 @@ pub(crate) mod syntax;
 
 pub mod ast;
 pub mod comments;
+pub mod cst;
 pub mod keywords;
 pub(crate) mod merge_spec_modules;
 pub mod parsed_tree;
+pub mod translate;
 
 use crate::shared::{CompilationEnv, IndexedPackagePath};
 use anyhow::anyhow;
